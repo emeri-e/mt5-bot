@@ -1,2 +1,4 @@
 .venv
 .env
+user.session
+user.session-journal
