@@ -2,3 +2,5 @@
 .env
 user.session
 user.session-journal
+trades.json
+listener.log
