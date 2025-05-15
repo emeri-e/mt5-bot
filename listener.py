@@ -5,6 +5,9 @@ from telethon import TelegramClient, events
 import logging
 import re
 from config import base
+from functions import get_order_id_by_message_id, log_new_trade, log_trade_update, update_trade_status
+from mt5.utils import handler as h #type: debug
+
 
 # === Logging Setup ===
 log_dir = os.path.dirname(os.path.abspath(__file__))
@@ -23,14 +26,6 @@ api_hash = base.api_hash
 session_file = 'user'
 telegram_client = TelegramClient(session_file, api_id, api_hash)
 
-# === State Tracking ===
-message_mapping = {}
-if os.path.exists('message_mapping.json'):
-    with open('message_mapping.json', 'r') as f:
-        message_mapping = json.load(f)
-
-# def replace_case_insensitive(message, pattern, replacement):
-#     return re.sub(pattern, replacement, message, flags=re.IGNORECASE)
 
 def send(data):
     trading_bot_url = 'http://127.0.0.1:1960/trade_signal'
@@ -47,10 +42,6 @@ def send(data):
     return None
 
 
-import re
-
-popular_currencies = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CHF', 'CAD', 'XAU', 'XAG', 'BTC', 'ETH']
-
 def parse_trade_signal(text):
     data = {}
 
@@ -59,7 +50,7 @@ def parse_trade_signal(text):
     flat_text = ' '.join(lines)
 
     # Detect pair
-    for curr in popular_currencies:
+    for curr in base.POPULAR_CURRENCIES:
         matches = re.finditer(rf'([A-Z]{{3,4}}){curr}', flat_text)
         for m in matches:
             symbol = m.group(0)
@@ -68,6 +59,9 @@ def parse_trade_signal(text):
                 break
         if 'pair' in data:
             break
+    else:
+        if 'GOLD' in flat_text or 'XAU' in flat_text:
+            data['pair'] = 'XAUUSD'
 
     # Direction
     if "BUY" in flat_text and "SELL" not in flat_text:
@@ -116,6 +110,37 @@ def parse_trade_signal(text):
             data[f'tp{i+1}'] = tp
 
     return data if 'pair' in data and 'direction' in data else None
+
+def parse_update_instruction(text):
+    text = text.lower().strip()
+    actions = []
+
+    if "move sl to be" in text or "move stop to breakeven" in text:
+        actions.append({"type": "modify_sl", "value": "be"})  
+
+    if "close trade" in text:
+        actions.append({"type": "close_trade"})
+
+    if "tp" in text and "hit" in text:
+        match = re.search(r"tp\s*(\d+)", text)
+        if match:
+            tp_level = match.group(1)
+            actions.append({"type": "tp_hit", "tp": tp_level})
+        else:
+            actions.append({"type": "tp_hit"})
+    if 'chage entry' in text:
+        match = re.search(r'\bchange\sentry\b(\s+\w+)*\s+(\d+)', text)
+        if match:
+            new_entry = match.group(2)
+            actions.append({"type": "change_entry", "value": new_entry})
+    if 'sl to' in text or 'stop loss to' in text or 'stoploss to' in text:
+        match = re.search(r'(\bsl\b|\bstop\b\s\bloss\b|\bstoploss\b)(\s+\w+)*\s+(\d+)', text)
+        if match:
+            new_sl = match.group(3)
+            actions.append({"type": "modify_sl", "value": new_sl})
+    
+    return actions if actions else [{"type": "note", "text": text}]
+
 
 def is_new_trade_message(text):
     text_upper = text.upper()
@@ -170,6 +195,8 @@ async def message_handler(event):
     if is_new_trade_message(telegram_message):
         signal_data = parse_trade_signal(telegram_message)
         if signal_data:
+            log_new_trade(message_id, signal_data)
+
             signal_payload = {
                 "type": "new",
                 "message_id": message_id,
@@ -177,13 +204,13 @@ async def message_handler(event):
                 "data": signal_data
             }
 
-            response_data = send(signal_payload)
+            # response_data = send(signal_payload)
+            response_data = h(signal_payload)
 
             if response_data and 'order_id' in response_data:
-                message_mapping[message_id] = response_data['order_id']
-                with open('message_mapping.json', 'w') as f:
-                    json.dump(message_mapping, f, indent=4)
-                logger.info(f"Saved order_id {response_data['order_id']} for message {message_id}")
+                order_id = response_data['order_id']
+                update_trade_status(message_id, order_id)
+                logger.info(f"Saved order_id {order_id} for message {message_id}")
             else:
                 logger.warning("No order_id returned from trading bot.")
 
@@ -191,19 +218,28 @@ async def message_handler(event):
 
     elif is_update_message(telegram_message) and event.message.is_reply:
         reply_id = str(event.message.reply_to_msg_id)
-        order_id = message_mapping.get(reply_id)
+        order_id = get_order_id_by_message_id(reply_id)
 
         if order_id:
+            actions = parse_update_instruction(telegram_message)
+
             update_payload = {
                 "type": "update",
                 "message_id": message_id,
                 "order_id": order_id,
-                "data": {"update_note": telegram_message}
+                "data": {"actions": actions}
             }
 
-            send(update_payload)
+            # response = send(update_payload)
+            response = h(update_payload)
+
+            if response and "results" in response:
+                log_trade_update(reply_id, response["results"])
+                logger.info(f"Logged update results: {response['results']}")
+
             logger.info(f"Sent UPDATE signal: {update_payload}")
 
+            
 if __name__ == '__main__':
     with telegram_client:
         telegram_client.loop.run_until_complete(select_channel_to_monitor())
