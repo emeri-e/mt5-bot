@@ -15,7 +15,7 @@ def shutdown_mt5():
     logger.info("MT5 Shutdown.")
 
 def get_order_type(direction):
-    return mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
+    return mt5.ORDER_TYPE_BUY_LIMIT if direction == "BUY" else mt5.ORDER_TYPE_SELL
 
 def send_order(symbol, direction, entry_price, sl, tp):
     lot = 0.1  
@@ -25,15 +25,16 @@ def send_order(symbol, direction, entry_price, sl, tp):
     if not mt5.symbol_select(symbol, True):
         logger.error(f"Failed to select symbol {symbol}")
         return None
-
+    point = mt5.symbol_info(symbol).point
+    price = entry_price
     request = {
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": symbol,
         "volume": lot,
         "type": order_type,
-        "price": entry_price,
-        "sl": sl,
-        "tp": tp,
+        "price": price,
+        "sl": price - 100 * point,
+        "tp": price + 100 * point,
         "deviation": 10,
         "magic": 234000,  
         "comment": "Auto Trade",

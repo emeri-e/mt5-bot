@@ -9,7 +9,7 @@ if not mt5.initialize():
     print("initialize() failed")
     mt5.shutdown()
 
-symbol = 'USDJPY'
+symbol = 'EURUSD'
 symbol_info = mt5.symbol_info(symbol)
 if symbol_info is None:
     print(f"Symbol {symbol} not found")
@@ -51,33 +51,35 @@ def test_trade_signal():
     point = mt5.symbol_info(symbol).point
     price = mt5.symbol_info_tick(symbol).ask
     deviation = 20
-    signal_data = {
-        "action": mt5.TRADE_ACTION_DEAL,
-        "symbol": symbol,
-        "volume": lot,
-        "type": mt5.ORDER_TYPE_BUY,
-        "price": price,
-        "sl": price - 100 * point,
-        "tp": price + 100 * point,
-        "deviation": deviation,
-        "magic": 234000,
-        "comment": "python script open",
-        "type_time": mt5.ORDER_TIME_GTC,
-        "type_filling": mt5.ORDER_FILLING_RETURN,
-    }
     # signal_data = {
-    #     "symbol": "EURUSD",
-    #     "action": mt5.TRADE_ACTION_PENDING,
-    #     'price': 1.1950,
-    #     'type_filling': mt5.ORDER_FILLING_FOK,
-    #     'type_time': mt5.ORDER_TIME_GTC,
-    #     'volume': 0.1,
-    #     "take_profit": 1.2000,
-    #     "stop_loss": 1.1900,
-    #     "comment": "Test order",
-    #     "magic": 123456,
-    #     "deviation": 10,
-    #     }
+    #     "action": mt5.TRADE_ACTION_DEAL,
+    #     "symbol": symbol,
+    #     "volume": lot,
+    #     "type": mt5.ORDER_TYPE_BUY,
+    #     "price": price,
+    #     "sl": price - 100 * point,
+    #     "tp": price + 100 * point,
+    #     "deviation": deviation,
+    #     "magic": 234000,
+    #     "comment": "python script open",
+    #     "type_time": mt5.ORDER_TIME_GTC,
+    #     "type_filling": mt5.ORDER_FILLING_RETURN,
+    # }
+    #price = 1.1950
+    signal_data = {
+        "symbol": symbol,
+        "action": mt5.TRADE_ACTION_DEAL,
+        'price': price,
+        'type_filling': mt5.ORDER_FILLING_RETURN,
+        'type_time': mt5.ORDER_TIME_GTC,
+        'volume': 0.1,
+        "type": mt5.ORDER_TYPE_BUY,
+        "tp": price + 100 * point,
+        "sl": price - 100 * point,
+        "comment": "Test order",
+        "magic": 123456,
+        "deviation": 10,
+        }
     result = mt5.order_send(signal_data)
     if result.retcode != mt5.TRADE_RETCODE_DONE:
         print(f"Order failed: {result.retcode}")
