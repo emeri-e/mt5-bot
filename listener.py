@@ -128,18 +128,21 @@ def parse_update_instruction(text):
             actions.append({"type": "tp_hit", "tp": tp_level})
         else:
             actions.append({"type": "tp_hit"})
-    if 'chage entry' in text:
-        match = re.search(r'\bchange\sentry\b(\s+\w+)*\s+(\d+)', text)
+    # update to the parse_update_instruction done by me
+    
+    if 'change entry' in text:
+        match = re.search(r'\bchange\sentry\b(\s+[A-Za-z:]+){0,5}\s+(\d+)', text)
         if match:
             new_entry = match.group(2)
             actions.append({"type": "change_entry", "value": new_entry})
     if 'sl to' in text or 'stop loss to' in text or 'stoploss to' in text:
-        match = re.search(r'(\bsl\b|\bstop\b\s\bloss\b|\bstoploss\b)(\s+\w+)*\s+(\d+)', text)
+        match = re.search(r'(\bsl\b|\bstop\b\s\bloss\b|\bstoploss\b)(\s+[A-Za-z:]+)\s+(\d+)', text)
         if match:
             new_sl = match.group(3)
             actions.append({"type": "modify_sl", "value": new_sl})
-    
+
     return actions if actions else [{"type": "note", "text": text}]
+
 
 
 def is_new_trade_message(text):

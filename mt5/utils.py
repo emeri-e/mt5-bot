@@ -51,14 +51,14 @@ def send_order(symbol, direction, entry_price, sl, tp):
     return result.order
 
 def update_trade(order_id, action):
-    position = mt5.positions_get(ticket=order_id)
-    if not position:
+    order = mt5.orders_get(ticket=order_id)
+    if not order:
         logging.warning(f"Position {order_id} not found.")
         return False
-    position = position[0]
+    order = order[0]
 
-    symbol = position.symbol
-    volume = position.volume
+    symbol = order.symbol
+    volume = order.volume
     price_info = mt5.symbol_info_tick(symbol)
     if price_info is None:
         logging.warning(f"Price info for {symbol} not found.")
@@ -66,39 +66,41 @@ def update_trade(order_id, action):
 
     if action["type"] == "modify_sl":
         if action["value"] == "be":
-            sl = position.price_open
+            sl = order.price_open
         else:
             sl = float(action["value"])
 
         request = {
-            "action": mt5.TRADE_ACTION_SLTP,
+            "action": mt5.TRADE_ACTION_SLTP, #Check the order status and change to mt5.TRADE_ACTION_SLTP if necessary 
             "position": order_id,
             "symbol": symbol,
             "sl": sl,
-            "tp": position.tp,
-            "type": mt5.ORDER_TYPE_BUY if position.type == 0 else mt5.ORDER_TYPE_SELL,
-            "magic": position.magic,
+            "tp": order.tp,
+            "type": mt5.ORDER_TYPE_BUY if order.type == 0 else mt5.ORDER_TYPE_SELL,
+            "magic": order.magic,
         }
         result = mt5.order_send(request)
         return result.retcode == mt5.TRADE_RETCODE_DONE
 
     elif action["type"] == "close_trade":
-        close_type = mt5.ORDER_TYPE_SELL if position.type == 0 else mt5.ORDER_TYPE_BUY
-        price = price_info.bid if position.type == 0 else price_info.ask
+        close_type = mt5.ORDER_TYPE_SELL if order.type == 0 else mt5.ORDER_TYPE_BUY
+        price = price_info.bid if order.type == 0 else price_info.ask
 
         request = {
-            "action": mt5.TRADE_ACTION_DEAL,
+            "action": mt5.TRADE_ACTION_DEAL, #find if the order is pending or running and act accordinly
             "position": order_id,
             "symbol": symbol,
             "volume": volume,
             "type": close_type,
             "price": price,
             "deviation": 10,
-            "magic": position.magic,
+            "magic": order.magic,
         }
         result = mt5.order_send(request)
         return result.retcode == mt5.TRADE_RETCODE_DONE
-
+    elif action["type"] == 'change_entry':
+        #change entry
+        pass
     elif action["type"] == "tp_hit":
         logging.info(f"Take-profit level hit: TP{action.get('tp', '')} for order {order_id}")
         return True
