@@ -222,6 +222,7 @@ async def message_handler(event):
     elif is_update_message(telegram_message) and event.message.is_reply:
         reply_id = str(event.message.reply_to_msg_id)
         order_id = get_order_id_by_message_id(reply_id)
+        logger.debug(f'Order id:{order_id} was sucessfully gotten')
 
         if order_id:
             actions = parse_update_instruction(telegram_message)
@@ -232,9 +233,11 @@ async def message_handler(event):
                 "order_id": order_id,
                 "data": {"actions": actions}
             }
+            logger.debug(f'update payload = {update_payload}')
 
             # response = send(update_payload)
             response = h(update_payload)
+            logger.debug(f'The response is {response}')
 
             if response and "results" in response:
                 log_trade_update(reply_id, response["results"])

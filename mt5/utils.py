@@ -1,6 +1,5 @@
 import MetaTrader5 as mt5
 import logging
-
 logger = logging.getLogger(__name__)
 
 def initialize_mt5():
@@ -51,11 +50,14 @@ def send_order(symbol, direction, entry_price, sl, tp):
     return result.order
 
 def update_trade(order_id, action):
-    order = mt5.orders_get(ticket=order_id)
+    order = mt5.history_orders_get(ticket=order_id)
     if not order:
         logging.warning(f"Position {order_id} not found.")
         return False
     order = order[0]
+    print(order)
+    logging.info(order)
+
 
     symbol = order.symbol
     volume = order.volume
@@ -87,7 +89,7 @@ def update_trade(order_id, action):
         price = price_info.bid if order.type == 0 else price_info.ask
 
         request = {
-            "action": mt5.TRADE_ACTION_DEAL, #find if the order is pending or running and act accordinly
+            "action": mt5.TRADE_ACTION_DEAL if order.state == mt5.ORDER_STATE_FILLED else mt5.TRADE_ACTION_MODIFY, #find if the order is pending or running and act accordinly
             "position": order_id,
             "symbol": symbol,
             "volume": volume,
@@ -175,4 +177,3 @@ if __name__ == '__main__':
         }
 
     # handle_trade_signal(data)
-
