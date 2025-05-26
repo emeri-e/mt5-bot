@@ -19,7 +19,7 @@ def save_trades(trades):
 def log_new_trade(message_id, signal_data):
     trades = load_trades()
     trades[message_id] = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now().isoformat(),
         "signal": signal_data,
         "status": "pending",
         "order_id": None,

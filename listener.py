@@ -6,19 +6,20 @@ import logging
 import re
 from config import base
 from functions import get_order_id_by_message_id, log_new_trade, log_trade_update, update_trade_status
-from mt5.utils import handler as h #type: debug
 
 
 # === Logging Setup ===
 log_dir = os.path.dirname(os.path.abspath(__file__))
 log_file = os.path.join(log_dir, 'listener.log')
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('mybot')
 handler = logging.FileHandler(log_file)
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 logger.setLevel(logging.DEBUG)
+
+from mt5.utils import handler as h, get_running_orders#type: debug
 
 # === Telegram API Setup ===
 api_id = base.api_id
@@ -111,35 +112,43 @@ def parse_trade_signal(text):
 
     return data if 'pair' in data and 'direction' in data else None
 
-def parse_update_instruction(text):
-    text = text.lower().strip()
+def parse_update_instruction(text:str):
     actions = []
+    keywords = {
+        "change_entry": [r"(\bchange\s+entry\b)", r"(\bentry\b)"],
+        "modify_sl": [r"(\bsl\b)", r"(\bstop\s*loss\b)", r"(\bstoploss\b)"],
+        "change_tp": [r"(\btp\b)", r"(\btake\s*profit\b)", r"(\btakeprofit\b)"]
+    }
 
-    if "move sl to be" in text or "move stop to breakeven" in text:
-        actions.append({"type": "modify_sl", "value": "be"})  
+    # Pre-compile the number pattern and combine all keywords
+    number_pattern = re.compile(r'\d+(?:\.\d+)?')
+    all_keywords = {kw: key for key, patterns in keywords.items() for kw in patterns}
 
-    if "close trade" in text:
-        actions.append({"type": "close_trade"})
+    # Build one combined regex pattern to match all keywords
+    pattern = re.compile('|'.join(all_keywords.keys()), re.IGNORECASE)
 
-    if "tp" in text and "hit" in text:
-        match = re.search(r"tp\s*(\d+)", text)
-        if match:
-            tp_level = match.group(1)
-            actions.append({"type": "tp_hit", "tp": tp_level})
-        else:
-            actions.append({"type": "tp_hit"})
-    # update to the parse_update_instruction done by me
-    
-    if 'change entry' in text:
-        match = re.search(r'\bchange\sentry\b(\s+[A-Za-z:]+){0,5}\s+(\d+)', text)
-        if match:
-            new_entry = match.group(2)
-            actions.append({"type": "change_entry", "value": new_entry})
-    if 'sl to' in text or 'stop loss to' in text or 'stoploss to' in text:
-        match = re.search(r'(\bsl\b|\bstop\b\s\bloss\b|\bstoploss\b)(\s+[A-Za-z:]+)\s+(\d+)', text)
-        if match:
-            new_sl = match.group(3)
-            actions.append({"type": "modify_sl", "value": new_sl})
+    # Find all keyword matches and their positions
+    matches = list(pattern.finditer(text))
+    matches.append(None)  # sentinel for end
+
+    for i in range(len(matches) - 1):
+        kw_match = matches[i]
+        print(kw_match)
+        start = kw_match.end()
+        end = matches[i+1].start() if matches[i+1] else len(text)
+
+        segment = text[start:end]
+        num_match = number_pattern.search(segment)
+
+        if num_match:
+            # Map the matched pattern back to its action type
+            matched_pattern = kw_match.group(0).lower()
+            action_type = next(
+                (action for pattern, action in all_keywords.items() if re.fullmatch(pattern, matched_pattern, re.IGNORECASE)),
+                None
+            )
+            if action_type:
+                actions.append({"type": action_type, "value": float(num_match.group())})
 
     return actions if actions else [{"type": "note", "text": text}]
 
@@ -154,7 +163,7 @@ def is_new_trade_message(text):
     )
 
 def is_update_message(text):
-    keywords = ['TP', 'MOVE SL', 'CLOSE TRADE']
+    keywords = ['TP', 'MOVE SL', 'CLOSE TRADE', 'SL', 'ENTRY']
     text_upper = text.upper()
     return any(k in text_upper for k in keywords)
 
@@ -162,26 +171,29 @@ def is_update_message(text):
 async def select_channel_to_monitor():
     await telegram_client.connect()
     dialogs = await telegram_client.get_dialogs()
-
     channels = [d for d in dialogs if d.is_channel]
     if not channels:
         print("No channels or groups found.")
         return
 
-    print("Select a channel/group to monitor:")
+    # print("Select a channel/group to monitor:")
+    selected_channel = None
     for i, dialog in enumerate(channels):
-        print(f"{i + 1}. {dialog.name} (ID: {dialog.entity.id})")
+        # print(f"{i + 1}. {dialog.name} (ID: {dialog.entity.id})")
+        if dialog.name == base.SELECTED_CHANNEL:
+            selected_channel = dialog
+            break
 
-    while True:
-        try:
-            selection = int(input("Enter the number of the channel to monitor: "))
-            if 1 <= selection <= len(channels):
-                selected_channel = channels[selection - 1]
-                break
-            else:
-                print("Invalid selection. Please try again.")
-        except ValueError:
-            print("Invalid input. Please enter a number.")
+    # while True:
+    #     try:
+    #         selection = int(input("Enter the number of the channel to monitor: "))
+    #         if 1 <= selection <= len(channels):
+    #             selected_channel = channels[selection - 1]
+    #             break
+    #         else:
+    #             print("Invalid selection. Please try again.")
+    #     except ValueError:
+    #         print("Invalid input. Please enter a number.")
 
     telegram_client.add_event_handler(message_handler, events.NewMessage(chats=selected_channel))
     print(f"Monitoring started for: {selected_channel.name} (ID: {selected_channel.entity.id})")
@@ -219,9 +231,19 @@ async def message_handler(event):
 
             logger.info(f"Sent NEW trade signal: {signal_payload}")
 
-    elif is_update_message(telegram_message) and event.message.is_reply:
-        reply_id = str(event.message.reply_to_msg_id)
-        order_id = get_order_id_by_message_id(reply_id)
+    elif is_update_message(telegram_message):
+        if event.message.is_reply:
+            reply_id = str(event.message.reply_to_msg_id)
+            order_id = get_order_id_by_message_id(reply_id)
+        #For update messages without replies
+        else:
+            order = get_running_orders()
+            if order:
+                order = sorted(order, key=lambda x: x.time_done, reverse=True)[0]
+                order_id = order.ticket
+            else:
+                logger.debug('No running orders or positioin found')
+                
         logger.debug(f'Order id:{order_id} was sucessfully gotten')
 
         if order_id:
