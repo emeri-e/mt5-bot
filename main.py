@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import requests
 from telethon import TelegramClient, events
 import logging
@@ -9,8 +10,14 @@ from functions import get_order_id_by_message_id, log_new_trade, log_trade_updat
 
 
 # === Logging Setup ===
-log_dir = os.path.dirname(os.path.abspath(__file__))
-log_file = os.path.join(log_dir, 'listener.log')
+if getattr(sys, 'frozen', False):
+    # Running as .exe
+    base_dir = os.path.dirname(sys.executable)
+else:
+    # Running as script
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+log_file = os.path.join(base_dir, 'listener.log')
 
 logger = logging.getLogger('mybot')
 handler = logging.FileHandler(log_file)
