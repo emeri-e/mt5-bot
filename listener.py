@@ -1,12 +1,12 @@
-import json
+import logging
 import os
+import re
+
 import requests
 from telethon import TelegramClient, events
-import logging
-import re
+
 from config import base
 from functions import get_order_id_by_message_id, log_new_trade, log_trade_update, update_trade_status
-
 
 # === Logging Setup ===
 log_dir = os.path.dirname(os.path.abspath(__file__))
@@ -19,7 +19,7 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 logger.setLevel(logging.DEBUG)
 
-from mt5.utils import handler as h, get_running_orders#type: debug
+from mt5.utils import handler as h, get_running_orders #type debug
 
 # === Telegram API Setup ===
 api_id = base.api_id
