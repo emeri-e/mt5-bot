@@ -1,16 +1,23 @@
-import logging
+import json
 import os
-import re
-
+import sys
 import requests
 from telethon import TelegramClient, events
-
+import logging
+import re
 from config import base
 from functions import get_order_id_by_message_id, log_new_trade, log_trade_update, update_trade_status
 
+
 # === Logging Setup ===
-log_dir = os.path.dirname(os.path.abspath(__file__))
-log_file = os.path.join(log_dir, 'listener.log')
+if getattr(sys, 'frozen', False):
+    # Running as .exe
+    base_dir = os.path.dirname(sys.executable)
+else:
+    # Running as script
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+log_file = os.path.join(base_dir, 'listener.log')
 
 logger = logging.getLogger('mybot')
 handler = logging.FileHandler(log_file)
@@ -19,7 +26,7 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 logger.setLevel(logging.DEBUG)
 
-from mt5.utils import handler as h, get_running_orders #type debug
+from mt5.utils import handler as h, get_running_orders#type: debug
 
 # === Telegram API Setup ===
 api_id = base.api_id
@@ -179,21 +186,22 @@ async def select_channel_to_monitor():
     # print("Select a channel/group to monitor:")
     selected_channel = None
     for i, dialog in enumerate(channels):
-        # print(f"{i + 1}. {dialog.name} (ID: {dialog.entity.id})")
+        print(f"{i + 1}. {dialog.name} (ID: {dialog.entity.id})") if 'fx' in dialog.name.lower() or 'signal' in dialog.name.lower() else None
         if dialog.name == base.SELECTED_CHANNEL:
             selected_channel = dialog
             break
-
-    # while True:
-    #     try:
-    #         selection = int(input("Enter the number of the channel to monitor: "))
-    #         if 1 <= selection <= len(channels):
-    #             selected_channel = channels[selection - 1]
-    #             break
-    #         else:
-    #             print("Invalid selection. Please try again.")
-    #     except ValueError:
-    #         print("Invalid input. Please enter a number.")
+    
+    else:
+        while True:
+            try:
+                selection = int(input("Enter the number of the channel to monitor: "))
+                if 1 <= selection <= len(channels):
+                    selected_channel = channels[selection - 1]
+                    break
+                else:
+                    print("Invalid selection. Please try again.")
+            except ValueError:
+                print("Invalid input. Please enter a number.")
 
     telegram_client.add_event_handler(message_handler, events.NewMessage(chats=selected_channel))
     print(f"Monitoring started for: {selected_channel.name} (ID: {selected_channel.entity.id})")
@@ -231,41 +239,82 @@ async def message_handler(event):
 
             logger.info(f"Sent NEW trade signal: {signal_payload}")
 
+    # elif is_update_message(telegram_message):
+    #     if event.message.is_reply:
+    #         reply_id = str(event.message.reply_to_msg_id)
+    #         order_id = get_order_id_by_message_id(reply_id)
+    #     #For update messages without replies
+    #     else:
+    #         order = get_running_orders()
+    #         if order:
+    #             order = sorted(order, key=lambda x: x.time_done, reverse=True)[0]
+    #             order_id = order.ticket
+    #         else:
+    #             logger.debug('No running orders or positioin found')
+                
+    #     logger.debug(f'Order id:{order_id} was sucessfully gotten')
+
+    #     if order_id:
+    #         actions = parse_update_instruction(telegram_message)
+
+    #         update_payload = {
+    #             "type": "update",
+    #             "message_id": message_id,
+    #             "order_id": order_id,
+    #             "data": {"actions": actions}
+    #         }
+    #         logger.debug(f'update payload = {update_payload}')
+
+    #         # response = send(update_payload)
+    #         response = h(update_payload)
+    #         logger.debug(f'The response is {response}')
+
+    #         if response and "results" in response:
+    #             log_trade_update(reply_id, response["results"])
+    #             logger.info(f"Logged update results: {response['results']}")
+
+    #         logger.info(f"Sent UPDATE signal: {update_payload}")
+
     elif is_update_message(telegram_message):
+        order_id = None
+        signal_msg_id = None
+
+        # Case: if message is a reply, fetch order_id from replied-to message
         if event.message.is_reply:
             reply_id = str(event.message.reply_to_msg_id)
             order_id = get_order_id_by_message_id(reply_id)
-        #For update messages without replies
+            signal_msg_id = reply_id
+
+        # Case: not a reply — find the latest valid signal message before this one
         else:
-            order = get_running_orders()
-            if order:
-                order = sorted(order, key=lambda x: x.time_done, reverse=True)[0]
-                order_id = order.ticket
-            else:
-                logger.debug('No running orders or positioin found')
-                
-        logger.debug(f'Order id:{order_id} was sucessfully gotten')
+            async for msg in telegram_client.iter_messages(event.chat_id, max_id=event.message.id - 1):
+                if msg.text and is_new_trade_message(msg.text):
+                    signal_msg_id = str(msg.id)
+                    order_id = get_order_id_by_message_id(signal_msg_id)
+                    logger.debug(f"Matched with previous trade message ID: {signal_msg_id}")
+                    break
 
         if order_id:
             actions = parse_update_instruction(telegram_message)
 
             update_payload = {
                 "type": "update",
-                "message_id": message_id,
+                "message_id": str(event.message.id),
                 "order_id": order_id,
                 "data": {"actions": actions}
             }
             logger.debug(f'update payload = {update_payload}')
 
-            # response = send(update_payload)
             response = h(update_payload)
             logger.debug(f'The response is {response}')
 
             if response and "results" in response:
-                log_trade_update(reply_id, response["results"])
+                log_trade_update(signal_msg_id, response["results"])
                 logger.info(f"Logged update results: {response['results']}")
 
             logger.info(f"Sent UPDATE signal: {update_payload}")
+        else:
+            logger.warning("Could not determine order_id for update message.")
 
             
 if __name__ == '__main__':
