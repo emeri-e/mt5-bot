@@ -6,13 +6,16 @@ from config import base
 
 TRADE_LOG_PATH = base.TRADE_LOG_PATH
 
+
 def load_trades():
+    '''Loads trades from the trade.json file'''
     if not os.path.exists(TRADE_LOG_PATH):
         return {}
     with open(TRADE_LOG_PATH, "r") as f:
         return json.load(f)
 
 def save_trades(trades):
+    '''Save trade into the trade.json file'''
     with open(TRADE_LOG_PATH, "w") as f:
         json.dump(trades, f, indent=4)
 
@@ -35,6 +38,7 @@ def update_trade_status(message_id, order_id):
         save_trades(trades)
 
 def log_trade_update(reply_message_id, update_results):
+    ''''''
     trades = load_trades()
     if reply_message_id in trades:
         trades[reply_message_id].setdefault("updates", []).append({

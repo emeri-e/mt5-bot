@@ -45,14 +45,13 @@ def send(data):
         else:
             logger.warning(f"Failed to send signal: {response.status_code}")
     except Exception as e:
-        logger.error(f"Error sending signal: {e}")
+        logger.error(f"Error sending signal:{e}")
     
     return None
 
 
 def parse_trade_signal(text):
     data = {}
-
     # Normalize text
     lines = text.upper().splitlines()
     flat_text = ' '.join(lines)
