@@ -8,6 +8,9 @@ import re
 from config import base
 from functions import get_order_id_by_message_id, log_new_trade, log_trade_update, update_trade_status
 
+import tkinter as tk
+from tkinter import messagebox
+
 
 # === Logging Setup ===
 if getattr(sys, 'frozen', False):
@@ -20,12 +23,13 @@ else:
 log_file = os.path.join(base_dir, 'listener.log')
 
 logger = logging.getLogger('mybot')
-handler = logging.FileHandler(log_file)
+handler = logging.FileHandler(log_file, encoding='utf-8')
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 logger.setLevel(logging.DEBUG)
 
+from gemini import call_ai_parser
 from mt5.utils import handler as h, get_running_orders#type: debug
 
 # === Telegram API Setup ===
@@ -33,6 +37,54 @@ api_id = base.api_id
 api_hash = base.api_hash
 session_file = 'user'
 telegram_client = TelegramClient(session_file, api_id, api_hash)
+
+LOT_SIZE = base.lot_size
+TP_INDEX = base.tp_index
+
+
+def show_settings_window():
+    def save_and_close():
+        try:
+            lot = float(lot_entry.get())
+            tp = int(tp_entry.get())
+            if tp < 1:
+                raise ValueError("TP Index must be >= 1")
+
+            base.lot_size = lot
+            base.tp_index = tp
+
+            # messagebox.showinfo("Saved", f"Lot size set to {lot}, TP index set to {tp}.\n"
+            #                              f"Note: If TP{tp} does not exist in the signal, the highest available lower TP will be used.")
+            root.destroy()
+        except ValueError as e:
+            messagebox.showerror("Invalid Input", str(e))
+
+    root = tk.Tk()
+    root.title("MT5 Bot Settings")
+    root.geometry("350x300")
+    root.resizable(False, False)
+
+    tk.Label(root, text="Configure Trade Settings", font=("Arial", 14, "bold")).pack(pady=10)
+
+    frame = tk.Frame(root)
+    frame.pack(pady=10)
+
+    tk.Label(frame, text="Lot Size:").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+    lot_entry = tk.Entry(frame)
+    lot_entry.grid(row=0, column=1, padx=5)
+    lot_entry.insert(0, str(LOT_SIZE))
+
+    tk.Label(frame, text="TP Index:").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+    tp_entry = tk.Entry(frame)
+    tp_entry.grid(row=1, column=1, padx=5)
+    tp_entry.insert(0, str(TP_INDEX))
+
+    tk.Button(root, text="Start Bot", command=save_and_close).pack(pady=10)
+
+    tk.Label(root, text="* If TP index is not found in signal, the closest lower TP will be used.", 
+             wraplength=320, font=("Arial", 9), fg="gray").pack(pady=5)
+
+    root.mainloop()
 
 
 def send(data):
@@ -50,126 +102,154 @@ def send(data):
     return None
 
 
+<<<<<<< HEAD
 def parse_trade_signal(text):
     data = {}
     # Normalize text
     lines = text.upper().splitlines()
     flat_text = ' '.join(lines)
+=======
+# def parse_trade_signal(text):
+#     data = {}
 
-    # Detect pair
-    for curr in base.POPULAR_CURRENCIES:
-        matches = re.finditer(rf'([A-Z]{{3,4}}){curr}', flat_text)
-        for m in matches:
-            symbol = m.group(0)
-            if symbol != curr and len(symbol) >= 6:
-                data['pair'] = symbol
-                break
-        if 'pair' in data:
-            break
-    else:
-        if 'GOLD' in flat_text or 'XAU' in flat_text:
-            data['pair'] = 'XAUUSD'
+#     # Normalize text
+#     lines = text.upper().splitlines()
+#     flat_text = ' '.join(lines)
+>>>>>>> ee921b1e0e46089ba2c73274e4e2cf7f85965402
 
-    # Direction
-    if "BUY" in flat_text and "SELL" not in flat_text:
-        data['direction'] = 'BUY'
-    elif "SELL" in flat_text and "BUY" not in flat_text:
-        data['direction'] = 'SELL'
-    elif "BUY" in flat_text and "SELL" in flat_text:
-        buy_idx = flat_text.find("BUY")
-        sell_idx = flat_text.find("SELL")
-        data['direction'] = 'BUY' if buy_idx < sell_idx else 'SELL'
+#     # Detect pair
+#     for curr in base.POPULAR_CURRENCIES:
+#         matches = re.finditer(rf'([A-Z]{{3,4}}){curr}', flat_text)
+#         for m in matches:
+#             symbol = m.group(0)
+#             if symbol != curr and len(symbol) >= 6:
+#                 data['pair'] = symbol
+#                 break
+#         if 'pair' in data:
+#             break
+#     else:
+#         if 'GOLD' in flat_text or 'XAU' in flat_text:
+#             data['pair'] = 'XAUUSD'
 
-    # Entry
-    entry_match = re.search(r'ENTRY(?: PRICE)?[:\s]*([0-9.]+)', flat_text)
-    if not entry_match:
-        for line in lines:
-            if "ENTRY" in line:
-                match = re.search(r'([0-9.]+)', line)
-                if match:
-                    entry_match = match
-                    break
-    if entry_match:
-        data['entry'] = entry_match.group(1)
+#     # Direction
+#     if "BUY" in flat_text and "SELL" not in flat_text:
+#         data['direction'] = 'BUY'
+#     elif "SELL" in flat_text and "BUY" not in flat_text:
+#         data['direction'] = 'SELL'
+#     elif "BUY" in flat_text and "SELL" in flat_text:
+#         buy_idx = flat_text.find("BUY")
+#         sell_idx = flat_text.find("SELL")
+#         data['direction'] = 'BUY' if buy_idx < sell_idx else 'SELL'
 
-    # SL 
-    sl_match = re.search(r'(STOP ?LOSS|SL)[:\s]*([0-9.]+)', flat_text)
-    if not sl_match:
-        for line in lines:
-            if "SL" in line or "STOP LOSS" in line:
-                match = re.search(r'([0-9.]+)', line)
-                if match:
-                    data['sl'] = match.group(1)
-                    break
-    else:
-        data['sl'] = sl_match.group(2)
+#     # Entry
+#     entry_match = re.search(r'ENTRY(?: PRICE)?[:\s]*([0-9.]+)', flat_text)
+#     if not entry_match:
+#         for line in lines:
+#             if "ENTRY" in line:
+#                 match = re.search(r'([0-9.]+)', line)
+#                 if match:
+#                     entry_match = match
+#                     break
+#     if entry_match:
+#         data['entry'] = entry_match.group(1)
 
-    # TPs
-    tps = re.findall(r'TP[0-9]*[:\s]*([0-9.]+)', flat_text)
-    if not tps:
-        for line in lines:
-            if line.strip().startswith('TP'):
-                match = re.search(r'([0-9.]+)', line)
-                if match:
-                    tps.append(match.group(1))
-    if tps:
-        for i, tp in enumerate(tps):
-            data[f'tp{i+1}'] = tp
+#     # SL 
+#     sl_match = re.search(r'(STOP ?LOSS|SL)[:\s]*([0-9.]+)', flat_text)
+#     if not sl_match:
+#         for line in lines:
+#             if "SL" in line or "STOP LOSS" in line:
+#                 match = re.search(r'([0-9.]+)', line)
+#                 if match:
+#                     data['sl'] = match.group(1)
+#                     break
+#     else:
+#         data['sl'] = sl_match.group(2)
 
-    return data if 'pair' in data and 'direction' in data else None
+#     # TPs
+#     tps = re.findall(r'TP[0-9]*[:\s]*([0-9.]+)', flat_text)
+#     if not tps:
+#         for line in lines:
+#             if line.strip().startswith('TP'):
+#                 match = re.search(r'([0-9.]+)', line)
+#                 if match:
+#                     tps.append(match.group(1))
+#     if tps:
+#         for i, tp in enumerate(tps):
+#             data[f'tp{i+1}'] = tp
 
-def parse_update_instruction(text:str):
-    actions = []
-    keywords = {
-        "change_entry": [r"(\bchange\s+entry\b)", r"(\bentry\b)"],
-        "modify_sl": [r"(\bsl\b)", r"(\bstop\s*loss\b)", r"(\bstoploss\b)"],
-        "change_tp": [r"(\btp\b)", r"(\btake\s*profit\b)", r"(\btakeprofit\b)"]
-    }
+#     return data if 'pair' in data and 'direction' in data else None
 
-    # Pre-compile the number pattern and combine all keywords
-    number_pattern = re.compile(r'\d+(?:\.\d+)?')
-    all_keywords = {kw: key for key, patterns in keywords.items() for kw in patterns}
+# def parse_update_instruction(text:str):
+#     actions = []
+#     keywords = {
+#         "change_entry": [r"(\bchange\s+entry\b)", r"(\bentry\b)"],
+#         "modify_sl": [r"(\bsl\b)", r"(\bstop\s*loss\b)", r"(\bstoploss\b)"],
+#         "change_tp": [r"(\btp\b)", r"(\btake\s*profit\b)", r"(\btakeprofit\b)"]
+#     }
 
-    # Build one combined regex pattern to match all keywords
-    pattern = re.compile('|'.join(all_keywords.keys()), re.IGNORECASE)
+#     # Pre-compile the number pattern and combine all keywords
+#     number_pattern = re.compile(r'\d+(?:\.\d+)?')
+#     all_keywords = {kw: key for key, patterns in keywords.items() for kw in patterns}
 
-    # Find all keyword matches and their positions
-    matches = list(pattern.finditer(text))
-    matches.append(None)  # sentinel for end
+#     # Build one combined regex pattern to match all keywords
+#     pattern = re.compile('|'.join(all_keywords.keys()), re.IGNORECASE)
 
-    for i in range(len(matches) - 1):
-        kw_match = matches[i]
-        print(kw_match)
-        start = kw_match.end()
-        end = matches[i+1].start() if matches[i+1] else len(text)
+#     # Find all keyword matches and their positions
+#     matches = list(pattern.finditer(text))
+#     matches.append(None)  # sentinel for end
 
-        segment = text[start:end]
-        num_match = number_pattern.search(segment)
+#     for i in range(len(matches) - 1):
+#         kw_match = matches[i]
+#         print(kw_match)
+#         start = kw_match.end()
+#         end = matches[i+1].start() if matches[i+1] else len(text)
 
-        if num_match:
-            # Map the matched pattern back to its action type
-            matched_pattern = kw_match.group(0).lower()
-            action_type = next(
-                (action for pattern, action in all_keywords.items() if re.fullmatch(pattern, matched_pattern, re.IGNORECASE)),
-                None
-            )
-            if action_type:
-                actions.append({"type": action_type, "value": float(num_match.group())})
+#         segment = text[start:end]
+#         num_match = number_pattern.search(segment)
 
-    return actions if actions else [{"type": "note", "text": text}]
+#         if num_match:
+#             # Map the matched pattern back to its action type
+#             matched_pattern = kw_match.group(0).lower()
+#             action_type = next(
+#                 (action for pattern, action in all_keywords.items() if re.fullmatch(pattern, matched_pattern, re.IGNORECASE)),
+#                 None
+#             )
+#             if action_type:
+#                 actions.append({"type": action_type, "value": float(num_match.group())})
 
+#     return actions if actions else [{"type": "note", "text": text}]
+
+def parse_trade_signal(text: str):
+    try:
+        response = call_ai_parser(text)
+        parsed = json.loads(response)
+        if parsed.get("type") == "new":
+            return {k: v for k, v in parsed.items() if k != "type"}
+    except Exception as e:
+        print(f"parse_trade_signal failed: {e}")
+    return None
+
+def parse_update_instruction(text: str):
+    try:
+        response = call_ai_parser(text)
+        parsed = json.loads(response)
+        if parsed.get("type") == "update":
+            return parsed.get("actions", [])
+    except Exception as e:
+        print(f"parse_update_instruction failed: {e}")
+    return [{"type": "note", "text": text}]
 
 
 def is_new_trade_message(text):
     text_upper = text.upper()
     return (
-        any(keyword in text_upper for keyword in ['BUY', 'SELL']) and 
+        # any(keyword in text_upper for keyword in ['BUY', 'SELL']) and 
         len(text) > 25 and 
         len(text.splitlines()) > 5
     )
 
 def is_update_message(text):
-    keywords = ['TP', 'MOVE SL', 'CLOSE TRADE', 'SL', 'ENTRY']
+    keywords = ['TP', 'CLOSE', 'SL', 'ENTRY', 'CANCEL', 'STOP']
     text_upper = text.upper()
     return any(k in text_upper for k in keywords)
 
@@ -217,6 +297,17 @@ async def message_handler(event):
     if is_new_trade_message(telegram_message):
         signal_data = parse_trade_signal(telegram_message)
         if signal_data:
+            signal_data['lot'] = LOT_SIZE
+            max_index = TP_INDEX
+            for i in range(max_index, 0, -1):
+                tp_key = f"tp{i}"
+                if tp_key in signal_data:
+                    signal_data["tp"] = signal_data[tp_key]
+                    break
+            else:
+                logger.warning("couldnt get the tp value. skipping trade...")
+                return
+            
             log_new_trade(message_id, signal_data)
 
             signal_payload = {
@@ -317,6 +408,8 @@ async def message_handler(event):
 
             
 if __name__ == '__main__':
+    show_settings_window()
+
     with telegram_client:
         telegram_client.loop.run_until_complete(select_channel_to_monitor())
         logger.info("Telegram client started and monitoring initialized.")

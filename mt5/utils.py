@@ -21,8 +21,7 @@ def shutdown_mt5():
 def get_order_type(direction):
     return mt5.ORDER_TYPE_BUY_LIMIT if direction == "BUY" else mt5.ORDER_TYPE_SELL_LIMIT
 
-def send_order(symbol, direction, entry_price, sl, tp):
-    lot = 0.1  
+def send_order(symbol, direction, entry_price, sl, tp, lot=0.1):
     order_type = get_order_type(direction)
 
     # Ensure symbol is available
@@ -52,6 +51,7 @@ def send_order(symbol, direction, entry_price, sl, tp):
         return None
 
     logger.info(f"Order placed successfully: {result}")
+    print("Order placed successfully!")
     return result.order
 
 def update_trade(order_id, action):
@@ -98,19 +98,31 @@ def update_trade(order_id, action):
         return result.retcode == mt5.TRADE_RETCODE_DONE
 
     elif action["type"] == "close_trade":
-        close_type = mt5.ORDER_TYPE_SELL if order.type == 0 else mt5.ORDER_TYPE_BUY
-        price = price_info.bid if order.type == 0 else price_info.ask
+        if order.state == mt5.ORDER_STATE_FILLED:
+            close_type = mt5.ORDER_TYPE_SELL if order.type == 0 else mt5.ORDER_TYPE_BUY
+            price = price_info.bid if order.type == 0 else price_info.ask
 
-        request = {
-            "action": mt5.TRADE_ACTION_DEAL if order.state == mt5.ORDER_STATE_FILLED else mt5.TRADE_ACTION_MODIFY, #find if the order is pending or running and act accordinly
-            "position": order_id,
-            "symbol": symbol,
-            "volume": volume,
-            "type": close_type,
-            "price": price,
-            "deviation": 10,
-            "magic": order.magic,
-        }
+            request = {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "position": order_id,
+                "symbol": symbol,
+                "volume": volume,
+                "type": close_type,
+                "price": price,
+                "deviation": 10,
+                "magic": order.magic,
+            }
+        elif order.state == mt5.ORDER_STATE_PLACED:
+            request = {
+                "action": mt5.TRADE_ACTION_REMOVE,
+                "order": order_id,
+                "symbol": symbol,
+                "magic": order.magic,
+            }
+        
+        else:
+            return False
+
         result = mt5.order_send(request)
         return result.retcode == mt5.TRADE_RETCODE_DONE
     elif action["type"] == 'change_entry':
@@ -187,13 +199,17 @@ def handler(data):
         if not signal_data:
             return {"error": "Missing signal data"}
 
+        # initialize_mt5()
+        # shutdown_mt5()
+
         initialize_mt5()
         new_order_id = send_order(
             symbol=signal_data.get("pair"),
             direction=signal_data.get("direction"),
             entry_price=float(signal_data.get("entry")),
             sl=float(signal_data.get("sl", 0)),
-            tp=float(signal_data.get("tp1", 0))
+            tp=float(signal_data.get("tp", 0)),
+            lot=float(signal_data.get("lot", 0))
         )
         shutdown_mt5()
         return {"order_id": new_order_id}
@@ -208,6 +224,8 @@ def handler(data):
         for action in actions:
             success = update_trade(order_id, action)
             results.append({"action": action["type"], "success": success})
+            if success:
+                print(f"action '{action["type"]}' was successful on {order_id}")
         shutdown_mt5()
         return {"status": "processed", "results": results}
 
