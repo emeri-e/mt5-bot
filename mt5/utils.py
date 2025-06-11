@@ -187,6 +187,9 @@ def handler(data):
         if not signal_data:
             return {"error": "Missing signal data"}
 
+        # initialize_mt5()
+        # shutdown_mt5()
+
         initialize_mt5()
         new_order_id = send_order(
             symbol=signal_data.get("pair"),

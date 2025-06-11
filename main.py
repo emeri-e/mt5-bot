@@ -20,12 +20,13 @@ else:
 log_file = os.path.join(base_dir, 'listener.log')
 
 logger = logging.getLogger('mybot')
-handler = logging.FileHandler(log_file)
+handler = logging.FileHandler(log_file, encoding='utf-8')
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 logger.setLevel(logging.DEBUG)
 
+from gemini import call_ai_parser
 from mt5.utils import handler as h, get_running_orders#type: debug
 
 # === Telegram API Setup ===
@@ -50,121 +51,140 @@ def send(data):
     return None
 
 
-def parse_trade_signal(text):
-    data = {}
+# def parse_trade_signal(text):
+#     data = {}
 
-    # Normalize text
-    lines = text.upper().splitlines()
-    flat_text = ' '.join(lines)
+#     # Normalize text
+#     lines = text.upper().splitlines()
+#     flat_text = ' '.join(lines)
 
-    # Detect pair
-    for curr in base.POPULAR_CURRENCIES:
-        matches = re.finditer(rf'([A-Z]{{3,4}}){curr}', flat_text)
-        for m in matches:
-            symbol = m.group(0)
-            if symbol != curr and len(symbol) >= 6:
-                data['pair'] = symbol
-                break
-        if 'pair' in data:
-            break
-    else:
-        if 'GOLD' in flat_text or 'XAU' in flat_text:
-            data['pair'] = 'XAUUSD'
+#     # Detect pair
+#     for curr in base.POPULAR_CURRENCIES:
+#         matches = re.finditer(rf'([A-Z]{{3,4}}){curr}', flat_text)
+#         for m in matches:
+#             symbol = m.group(0)
+#             if symbol != curr and len(symbol) >= 6:
+#                 data['pair'] = symbol
+#                 break
+#         if 'pair' in data:
+#             break
+#     else:
+#         if 'GOLD' in flat_text or 'XAU' in flat_text:
+#             data['pair'] = 'XAUUSD'
 
-    # Direction
-    if "BUY" in flat_text and "SELL" not in flat_text:
-        data['direction'] = 'BUY'
-    elif "SELL" in flat_text and "BUY" not in flat_text:
-        data['direction'] = 'SELL'
-    elif "BUY" in flat_text and "SELL" in flat_text:
-        buy_idx = flat_text.find("BUY")
-        sell_idx = flat_text.find("SELL")
-        data['direction'] = 'BUY' if buy_idx < sell_idx else 'SELL'
+#     # Direction
+#     if "BUY" in flat_text and "SELL" not in flat_text:
+#         data['direction'] = 'BUY'
+#     elif "SELL" in flat_text and "BUY" not in flat_text:
+#         data['direction'] = 'SELL'
+#     elif "BUY" in flat_text and "SELL" in flat_text:
+#         buy_idx = flat_text.find("BUY")
+#         sell_idx = flat_text.find("SELL")
+#         data['direction'] = 'BUY' if buy_idx < sell_idx else 'SELL'
 
-    # Entry
-    entry_match = re.search(r'ENTRY(?: PRICE)?[:\s]*([0-9.]+)', flat_text)
-    if not entry_match:
-        for line in lines:
-            if "ENTRY" in line:
-                match = re.search(r'([0-9.]+)', line)
-                if match:
-                    entry_match = match
-                    break
-    if entry_match:
-        data['entry'] = entry_match.group(1)
+#     # Entry
+#     entry_match = re.search(r'ENTRY(?: PRICE)?[:\s]*([0-9.]+)', flat_text)
+#     if not entry_match:
+#         for line in lines:
+#             if "ENTRY" in line:
+#                 match = re.search(r'([0-9.]+)', line)
+#                 if match:
+#                     entry_match = match
+#                     break
+#     if entry_match:
+#         data['entry'] = entry_match.group(1)
 
-    # SL 
-    sl_match = re.search(r'(STOP ?LOSS|SL)[:\s]*([0-9.]+)', flat_text)
-    if not sl_match:
-        for line in lines:
-            if "SL" in line or "STOP LOSS" in line:
-                match = re.search(r'([0-9.]+)', line)
-                if match:
-                    data['sl'] = match.group(1)
-                    break
-    else:
-        data['sl'] = sl_match.group(2)
+#     # SL 
+#     sl_match = re.search(r'(STOP ?LOSS|SL)[:\s]*([0-9.]+)', flat_text)
+#     if not sl_match:
+#         for line in lines:
+#             if "SL" in line or "STOP LOSS" in line:
+#                 match = re.search(r'([0-9.]+)', line)
+#                 if match:
+#                     data['sl'] = match.group(1)
+#                     break
+#     else:
+#         data['sl'] = sl_match.group(2)
 
-    # TPs
-    tps = re.findall(r'TP[0-9]*[:\s]*([0-9.]+)', flat_text)
-    if not tps:
-        for line in lines:
-            if line.strip().startswith('TP'):
-                match = re.search(r'([0-9.]+)', line)
-                if match:
-                    tps.append(match.group(1))
-    if tps:
-        for i, tp in enumerate(tps):
-            data[f'tp{i+1}'] = tp
+#     # TPs
+#     tps = re.findall(r'TP[0-9]*[:\s]*([0-9.]+)', flat_text)
+#     if not tps:
+#         for line in lines:
+#             if line.strip().startswith('TP'):
+#                 match = re.search(r'([0-9.]+)', line)
+#                 if match:
+#                     tps.append(match.group(1))
+#     if tps:
+#         for i, tp in enumerate(tps):
+#             data[f'tp{i+1}'] = tp
 
-    return data if 'pair' in data and 'direction' in data else None
+#     return data if 'pair' in data and 'direction' in data else None
 
-def parse_update_instruction(text:str):
-    actions = []
-    keywords = {
-        "change_entry": [r"(\bchange\s+entry\b)", r"(\bentry\b)"],
-        "modify_sl": [r"(\bsl\b)", r"(\bstop\s*loss\b)", r"(\bstoploss\b)"],
-        "change_tp": [r"(\btp\b)", r"(\btake\s*profit\b)", r"(\btakeprofit\b)"]
-    }
+# def parse_update_instruction(text:str):
+#     actions = []
+#     keywords = {
+#         "change_entry": [r"(\bchange\s+entry\b)", r"(\bentry\b)"],
+#         "modify_sl": [r"(\bsl\b)", r"(\bstop\s*loss\b)", r"(\bstoploss\b)"],
+#         "change_tp": [r"(\btp\b)", r"(\btake\s*profit\b)", r"(\btakeprofit\b)"]
+#     }
 
-    # Pre-compile the number pattern and combine all keywords
-    number_pattern = re.compile(r'\d+(?:\.\d+)?')
-    all_keywords = {kw: key for key, patterns in keywords.items() for kw in patterns}
+#     # Pre-compile the number pattern and combine all keywords
+#     number_pattern = re.compile(r'\d+(?:\.\d+)?')
+#     all_keywords = {kw: key for key, patterns in keywords.items() for kw in patterns}
 
-    # Build one combined regex pattern to match all keywords
-    pattern = re.compile('|'.join(all_keywords.keys()), re.IGNORECASE)
+#     # Build one combined regex pattern to match all keywords
+#     pattern = re.compile('|'.join(all_keywords.keys()), re.IGNORECASE)
 
-    # Find all keyword matches and their positions
-    matches = list(pattern.finditer(text))
-    matches.append(None)  # sentinel for end
+#     # Find all keyword matches and their positions
+#     matches = list(pattern.finditer(text))
+#     matches.append(None)  # sentinel for end
 
-    for i in range(len(matches) - 1):
-        kw_match = matches[i]
-        print(kw_match)
-        start = kw_match.end()
-        end = matches[i+1].start() if matches[i+1] else len(text)
+#     for i in range(len(matches) - 1):
+#         kw_match = matches[i]
+#         print(kw_match)
+#         start = kw_match.end()
+#         end = matches[i+1].start() if matches[i+1] else len(text)
 
-        segment = text[start:end]
-        num_match = number_pattern.search(segment)
+#         segment = text[start:end]
+#         num_match = number_pattern.search(segment)
 
-        if num_match:
-            # Map the matched pattern back to its action type
-            matched_pattern = kw_match.group(0).lower()
-            action_type = next(
-                (action for pattern, action in all_keywords.items() if re.fullmatch(pattern, matched_pattern, re.IGNORECASE)),
-                None
-            )
-            if action_type:
-                actions.append({"type": action_type, "value": float(num_match.group())})
+#         if num_match:
+#             # Map the matched pattern back to its action type
+#             matched_pattern = kw_match.group(0).lower()
+#             action_type = next(
+#                 (action for pattern, action in all_keywords.items() if re.fullmatch(pattern, matched_pattern, re.IGNORECASE)),
+#                 None
+#             )
+#             if action_type:
+#                 actions.append({"type": action_type, "value": float(num_match.group())})
 
-    return actions if actions else [{"type": "note", "text": text}]
+#     return actions if actions else [{"type": "note", "text": text}]
 
+def parse_trade_signal(text: str):
+    try:
+        response = call_ai_parser(text)
+        parsed = json.loads(response)
+        if parsed.get("type") == "new":
+            return {k: v for k, v in parsed.items() if k != "type"}
+    except Exception as e:
+        print(f"parse_trade_signal failed: {e}")
+    return None
+
+def parse_update_instruction(text: str):
+    try:
+        response = call_ai_parser(text)
+        parsed = json.loads(response)
+        if parsed.get("type") == "update":
+            return parsed.get("actions", [])
+    except Exception as e:
+        print(f"parse_update_instruction failed: {e}")
+    return [{"type": "note", "text": text}]
 
 
 def is_new_trade_message(text):
     text_upper = text.upper()
     return (
-        any(keyword in text_upper for keyword in ['BUY', 'SELL']) and 
+        # any(keyword in text_upper for keyword in ['BUY', 'SELL']) and 
         len(text) > 25 and 
         len(text.splitlines()) > 5
     )
