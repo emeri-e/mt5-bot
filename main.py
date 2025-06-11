@@ -8,6 +8,9 @@ import re
 from config import base
 from functions import get_order_id_by_message_id, log_new_trade, log_trade_update, update_trade_status
 
+import tkinter as tk
+from tkinter import messagebox
+
 
 # === Logging Setup ===
 if getattr(sys, 'frozen', False):
@@ -34,6 +37,54 @@ api_id = base.api_id
 api_hash = base.api_hash
 session_file = 'user'
 telegram_client = TelegramClient(session_file, api_id, api_hash)
+
+LOT_SIZE = base.lot_size
+TP_INDEX = base.tp_index
+
+
+def show_settings_window():
+    def save_and_close():
+        try:
+            lot = float(lot_entry.get())
+            tp = int(tp_entry.get())
+            if tp < 1:
+                raise ValueError("TP Index must be >= 1")
+
+            base.lot_size = lot
+            base.tp_index = tp
+
+            # messagebox.showinfo("Saved", f"Lot size set to {lot}, TP index set to {tp}.\n"
+            #                              f"Note: If TP{tp} does not exist in the signal, the highest available lower TP will be used.")
+            root.destroy()
+        except ValueError as e:
+            messagebox.showerror("Invalid Input", str(e))
+
+    root = tk.Tk()
+    root.title("MT5 Bot Settings")
+    root.geometry("350x300")
+    root.resizable(False, False)
+
+    tk.Label(root, text="Configure Trade Settings", font=("Arial", 14, "bold")).pack(pady=10)
+
+    frame = tk.Frame(root)
+    frame.pack(pady=10)
+
+    tk.Label(frame, text="Lot Size:").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+    lot_entry = tk.Entry(frame)
+    lot_entry.grid(row=0, column=1, padx=5)
+    lot_entry.insert(0, str(LOT_SIZE))
+
+    tk.Label(frame, text="TP Index:").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+    tp_entry = tk.Entry(frame)
+    tp_entry.grid(row=1, column=1, padx=5)
+    tp_entry.insert(0, str(TP_INDEX))
+
+    tk.Button(root, text="Start Bot", command=save_and_close).pack(pady=10)
+
+    tk.Label(root, text="* If TP index is not found in signal, the closest lower TP will be used.", 
+             wraplength=320, font=("Arial", 9), fg="gray").pack(pady=5)
+
+    root.mainloop()
 
 
 def send(data):
@@ -190,7 +241,7 @@ def is_new_trade_message(text):
     )
 
 def is_update_message(text):
-    keywords = ['TP', 'MOVE SL', 'CLOSE TRADE', 'SL', 'ENTRY']
+    keywords = ['TP', 'CLOSE', 'SL', 'ENTRY', 'CANCEL', 'STOP']
     text_upper = text.upper()
     return any(k in text_upper for k in keywords)
 
@@ -238,6 +289,17 @@ async def message_handler(event):
     if is_new_trade_message(telegram_message):
         signal_data = parse_trade_signal(telegram_message)
         if signal_data:
+            signal_data['lot'] = LOT_SIZE
+            max_index = TP_INDEX
+            for i in range(max_index, 0, -1):
+                tp_key = f"tp{i}"
+                if tp_key in signal_data:
+                    signal_data["tp"] = signal_data[tp_key]
+                    break
+            else:
+                logger.warning("couldnt get the tp value. skipping trade...")
+                return
+            
             log_new_trade(message_id, signal_data)
 
             signal_payload = {
@@ -338,6 +400,8 @@ async def message_handler(event):
 
             
 if __name__ == '__main__':
+    show_settings_window()
+
     with telegram_client:
         telegram_client.loop.run_until_complete(select_channel_to_monitor())
         logger.info("Telegram client started and monitoring initialized.")

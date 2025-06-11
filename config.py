@@ -11,6 +11,6 @@ class BaseConfig:
     POPULAR_CURRENCIES = ['USD', 'EUR', 'GBP', 'JPY', 'AUD', 'NZD', 'CHF', 'CAD', 'XAU', 'XAG', 'BTC', 'ETH']
 
     lot_size=0.1
-    tp=1
+    tp_index=4
     
 base = BaseConfig()
