@@ -241,7 +241,28 @@ def is_new_trade_message(text):
     )
 
 def is_update_message(text):
-    keywords = ['TP', 'CLOSE', 'SL', 'ENTRY', 'CANCEL', 'STOP']
+    keywords = [
+        'TP',        
+        'SL',         
+        'ENTRY',      
+        'CLOSE',      
+        'CANCEL',     
+        'STOP',       
+        'REMOVE',     
+        'ADJUST',    
+        'MOVE',     
+        'MODIFY',   
+        'UPDATE',   
+        'DELETE',  
+        'EXIT',   
+        'REVISE',  
+        'EDIT',   
+        'SHIFT',  
+        'CHANGE', 
+        'WITHDRAW', 
+        'TAKE PROFIT' 
+    ]
+    
     text_upper = text.upper()
     return any(k in text_upper for k in keywords)
 
