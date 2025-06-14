@@ -2,6 +2,7 @@ import MetaTrader5 as mt5
 import logging
 logger = logging.getLogger('mybot')
 
+
 def get_running_orders():
     order = mt5.orders_get()
     if not order:
@@ -44,7 +45,6 @@ def send_order(symbol, direction, entry_price, sl, tp, lot=0.1):
         "type_time": mt5.ORDER_TIME_GTC,
         "type_filling": mt5.ORDER_FILLING_IOC,
     }
-
     result = mt5.order_send(request)
     if result.retcode != mt5.TRADE_RETCODE_DONE:
         logger.error(f"Order send failed: {result.retcode} - {result.comment}")

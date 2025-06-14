@@ -38,7 +38,7 @@ def update_trade_status(message_id, order_id):
         save_trades(trades)
 
 def log_trade_update(reply_message_id, update_results):
-    ''''''
+    
     trades = load_trades()
     if reply_message_id in trades:
         trades[reply_message_id].setdefault("updates", []).append({

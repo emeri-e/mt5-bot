@@ -102,20 +102,12 @@ def send(data):
     return None
 
 
-<<<<<<< HEAD
-def parse_trade_signal(text):
-    data = {}
-    # Normalize text
-    lines = text.upper().splitlines()
-    flat_text = ' '.join(lines)
-=======
 # def parse_trade_signal(text):
 #     data = {}
 
 #     # Normalize text
 #     lines = text.upper().splitlines()
 #     flat_text = ' '.join(lines)
->>>>>>> ee921b1e0e46089ba2c73274e4e2cf7f85965402
 
 #     # Detect pair
 #     for curr in base.POPULAR_CURRENCIES:
