@@ -10,3 +10,5 @@ test.py
 dist
 build
 *.spec
+*.json
+__pycache__

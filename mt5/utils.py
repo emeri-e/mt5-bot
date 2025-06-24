@@ -2,16 +2,20 @@ import MetaTrader5 as mt5
 import logging
 logger = logging.getLogger('mybot')
 
+
 def get_running_orders():
     order = mt5.orders_get()
     if not order:
         order = mt5.positions_get()
     return order
-def initialize_mt5():
-    if not mt5.initialize():
-        logger.error(f"MT5 Initialization failed: {mt5.last_error()}")
+def initialize_mt5(login, password, server):
+    shutdown_mt5()
+
+    if not mt5.initialize(login=login, password=password, server=server):
+        logger.error(f"MT5 Initialization failed for {login}: {mt5.last_error()}")
         return False
-    logger.info("MT5 Initialized successfully.")
+
+    logger.info(f"MT5 Initialized successfully for {login}")
     return True
 
 def shutdown_mt5():
@@ -44,7 +48,6 @@ def send_order(symbol, direction, entry_price, sl, tp, lot=0.1):
         "type_time": mt5.ORDER_TIME_GTC,
         "type_filling": mt5.ORDER_FILLING_IOC,
     }
-
     result = mt5.order_send(request)
     if result.retcode != mt5.TRADE_RETCODE_DONE:
         logger.error(f"Order send failed: {result.retcode} - {result.comment}")
@@ -190,19 +193,21 @@ def update_trade(order_id, action):
 #     order_id = send_order(symbol, direction, entry, sl, tp1)
 #     shutdown_mt5()
 #     return order_id
-def handler(data):
+def handler(data, login=None, password=None, server=None):
     msg_type = data.get("type")
     order_id = data.get("order_id")
+
+    if not (login and password and server):
+        return {"error": "Missing login credentials"}
 
     if msg_type == "new":
         signal_data = data.get("data")
         if not signal_data:
             return {"error": "Missing signal data"}
 
-        # initialize_mt5()
-        # shutdown_mt5()
+        if not initialize_mt5(login=int(login), password=password, server=server):
+            return {"error": "Failed to initialize MT5"}
 
-        initialize_mt5()
         new_order_id = send_order(
             symbol=signal_data.get("pair"),
             direction=signal_data.get("direction"),
@@ -219,13 +224,13 @@ def handler(data):
         if not actions or not order_id:
             return {"error": "Invalid update format"}
 
-        initialize_mt5()
+        if not initialize_mt5(login=int(login), password=password, server=server):
+            return {"error": "Failed to initialize MT5"}
+
         results = []
         for action in actions:
             success = update_trade(order_id, action)
             results.append({"action": action["type"], "success": success})
-            if success:
-                print(f"action '{action["type"]}' was successful on {order_id}")
         shutdown_mt5()
         return {"status": "processed", "results": results}
 
