@@ -25,13 +25,23 @@ def shutdown_mt5():
 def get_order_type(direction):
     return mt5.ORDER_TYPE_BUY_LIMIT if direction == "BUY" else mt5.ORDER_TYPE_SELL_LIMIT
 
+def find_real_symbol(target):
+    for sym in mt5.symbols_get():
+        if sym.name.upper().startswith(target):
+            return sym.name
+    return None
+
 def send_order(symbol, direction, entry_price, sl, tp, lot=0.1):
     order_type = get_order_type(direction)
 
     # Ensure symbol is available
     if not mt5.symbol_select(symbol, True):
-        logger.error(f"Failed to select symbol {symbol}")
-        return None
+        symbol = find_real_symbol(symbol)
+        if not symbol:
+            logger.error(f"Failed to select symbol {symbol}")
+            return None
+        
+        print(f'Changed symbol name to {symbol}')
     point = mt5.symbol_info(symbol).point
     price = entry_price
     request = {
@@ -59,33 +69,45 @@ def send_order(symbol, direction, entry_price, sl, tp, lot=0.1):
 
 def update_trade(order_id, action):
     order = mt5.orders_get(ticket=order_id)
-    
-    if not order:
-        logger.warning(f"Position {order_id} not found.")
-        return False
-    order = order[0]
-    if order.state == mt5.ORDER_STATE_FILLED or order.state == mt5.ORDER_STATE_PARTIAL:
+    if order:
+        order = order[0]
+        state = order.state
+        if state in (mt5.ORDER_STATE_FILLED, mt5.ORDER_STATE_PARTIAL):
+            order_action = mt5.TRADE_ACTION_SLTP
+            position_type = 'position'
+            volume = order.volume_current
+        elif state == mt5.ORDER_STATE_PLACED:
+            order_action = mt5.TRADE_ACTION_MODIFY
+            position_type = 'order'
+            volume = order.volume_current
+        else:
+            return False, f"unsupported order state: {state}"
+
+    else:
+        pos = mt5.positions_get(ticket=order_id)
+        if not pos:
+            logger.warning(f"Position {order_id} not found.")
+            return False, 'ticket id not found'
+        order = pos[0]
         order_action = mt5.TRADE_ACTION_SLTP
         position_type = 'position'
-    elif order.state == mt5.ORDER_STATE_PLACED:
-        order_action = mt5.TRADE_ACTION_MODIFY
-        position_type = 'order'
-    else:
-        return False    
+        volume = order.volume
+ 
 
 
     symbol = order.symbol
-    volume = order.volume_current
+    
     price_info = mt5.symbol_info_tick(symbol)
     if price_info is None:
         logger.warning(f"Price info for {symbol} not found.")
-        return False
+        return False, 'no price info'
 
     if action["type"] == "modify_sl":
         if action["value"] == "be":
             sl = order.price_open
         else:
             sl = float(action["value"])
+        
         
         request = {
             "action": order_action, #Check the order status and change to mt5.TRADE_ACTION_SLTP if necessary 
@@ -98,10 +120,11 @@ def update_trade(order_id, action):
             "magic": order.magic,
         }
         result = mt5.order_send(request)
-        return result.retcode == mt5.TRADE_RETCODE_DONE
+        status = result.retcode == mt5.TRADE_RETCODE_DONE
+        return status, f'[to {action["value"]}] {result.comment}'
 
     elif action["type"] == "close_trade":
-        if order.state == mt5.ORDER_STATE_FILLED:
+        if position_type == 'position':
             close_type = mt5.ORDER_TYPE_SELL if order.type == 0 else mt5.ORDER_TYPE_BUY
             price = price_info.bid if order.type == 0 else price_info.ask
 
@@ -115,7 +138,7 @@ def update_trade(order_id, action):
                 "deviation": 10,
                 "magic": order.magic,
             }
-        elif order.state == mt5.ORDER_STATE_PLACED:
+        elif position_type == 'order':
             request = {
                 "action": mt5.TRADE_ACTION_REMOVE,
                 "order": order_id,
@@ -124,14 +147,15 @@ def update_trade(order_id, action):
             }
         
         else:
-            return False
+            return False, 'unkwown state'
 
         result = mt5.order_send(request)
-        return result.retcode == mt5.TRADE_RETCODE_DONE
+        status = result.retcode == mt5.TRADE_RETCODE_DONE
+        return status, f'[trade close] {result.comment}'
     elif action["type"] == 'change_entry':
         #change entry
         entry = float(action["value"])
-        if order.state == mt5.ORDER_STATE_PLACED:
+        if position_type == 'order':
 
             request = {
                 "action": mt5.TRADE_ACTION_MODIFY, #Check the order status and change to mt5.TRADE_ACTION_SLTP if necessary 
@@ -145,14 +169,15 @@ def update_trade(order_id, action):
                 "type_filling": order.type_filling,
             }
             result = mt5.order_send(request)
-            logger.info(f'The error comment is {result.comment}')
-            return result.retcode == mt5.TRADE_RETCODE_DONE
+            status = result.retcode == mt5.TRADE_RETCODE_DONE
+            return status, f'[to {action["value"]}] {result.comment}'
         else:
-            logger.info('order has already been filled')
-            return False
+            logger.debug('order has already been filled')
+            return False, 'order already filled'
+
     elif action["type"] == "tp_hit":
-        logger.info(f"Take-profit level hit: TP{action.get('tp', '')} for order {order_id}")
-        return True
+        logger.debug(f"Take-profit level hit: TP{action.get('tp', '')} for order {order_id}")
+        return True, 'tp-hit'
     
     elif action['type'] == 'change_tp':
         
@@ -169,13 +194,14 @@ def update_trade(order_id, action):
             "magic": order.magic,
         }
         result = mt5.order_send(request)
-        return result.retcode == mt5.TRADE_RETCODE_DONE
+        status = result.retcode == mt5.TRADE_RETCODE_DONE
+        return status, f'[to {action["value"]}] {result.comment}'
     elif action["type"] == "note":
-        logger.info(f"Note update: {action['text']} for order {order_id}")
-        return True
+        logger.debug(f"Note update: {action['text']} for order {order_id}")
+        return True, 'noted'
 
     logger.warning(f"Unknown action type: {action}")
-    return False
+    return False, 'unknown update action type'
 
 
 # def handle_trade_signal(data):
@@ -229,8 +255,8 @@ def handler(data, login=None, password=None, server=None):
 
         results = []
         for action in actions:
-            success = update_trade(order_id, action)
-            results.append({"action": action["type"], "success": success})
+            success, comment = update_trade(order_id, action)
+            results.append({"action": action["type"], "success": success, 'comment': comment})
         shutdown_mt5()
         return {"status": "processed", "results": results}
 

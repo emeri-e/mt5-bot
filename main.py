@@ -12,7 +12,11 @@ from functions import get_order_id_by_message_id, load_accounts, log_new_trade, 
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+from collections import defaultdict, deque
+from datetime import datetime, timedelta
 
+# message_buffer[chat_id] = deque of recent messages (max 10, or 3-5 minutes)
+message_buffer = defaultdict(lambda: deque(maxlen=10))
 
 # === Logging Setup ===
 if getattr(sys, 'frozen', False):
@@ -29,9 +33,9 @@ handler = logging.FileHandler(log_file, encoding='utf-8')
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(filename)s - %(funcName)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
-logger.setLevel(logging.DEBUG)
+logger.setLevel(logging.INFO)
 
-from gemini import call_ai_parser
+from parser import call_ai_parser
 from mt5.utils import handler as h, get_running_orders#type: debug
 
 # === Telegram API Setup ===
@@ -87,7 +91,7 @@ def show_accounts_settings_window():
         partial_percent_var = tk.StringVar(value=account.get("partial_percent", "") if account else "")
 
         def remove():
-            entries.remove((frame, lot_var, tp_var, login_var, password_var, server_var, username_var))
+            entries.remove((frame, lot_var, tp_var, login_var, password_var, server_var, username_var, partial_index_var, partial_percent_var))
             frame.destroy()
 
         tk.Label(frame, text="Lot Size").grid(row=0, column=0)
@@ -285,9 +289,9 @@ def send(data):
 def parse_trade_signal(text: str):
     try:
         response = call_ai_parser(text)
-        parsed = json.loads(response)
-        if parsed.get("type") == "new":
-            return {k: v for k, v in parsed.items() if k != "type"}
+        # parsed = json.loads(response)
+        if response.get("type") == "new":
+            return {k: v for k, v in response.items() if k != "type"}
     except Exception as e:
         print(f"parse_trade_signal failed: {e}")
     return None
@@ -295,9 +299,9 @@ def parse_trade_signal(text: str):
 def parse_update_instruction(text: str):
     try:
         response = call_ai_parser(text)
-        parsed = json.loads(response)
-        if parsed.get("type") == "update":
-            return parsed.get("actions", [])
+        # parsed = json.loads(response)
+        if response.get("type") == "update":
+            return response.get("actions", [])
     except Exception as e:
         print(f"parse_update_instruction failed: {e}")
     return [{"type": "note", "text": text}]
@@ -461,8 +465,29 @@ async def message_handler(event):
     telegram_message = event.message.text
     message_id = str(event.message.id)
 
+    
+    message_buffer[chat_id].append({
+        "id": message_id,
+        "text": telegram_message,
+        "timestamp": datetime.now(),
+    })
+
+    now = datetime.now()
+    message_buffer[chat_id] = deque([
+        msg for msg in message_buffer[chat_id]
+        if now - msg["timestamp"] < timedelta(minutes=2)
+    ])
+
+    logger.info(message_buffer[chat_id])
+
+    combined_text = "\n".join([msg["text"] for msg in message_buffer[chat_id]])
+
     if is_new_trade_message(telegram_message):
         signal_data = parse_trade_signal(telegram_message)
+        if signal_data.get('pair') and signal_data.get('direction') and signal_data.get('entry') and signal_data.get('sl') and signal_data.get('tp1'):
+            pass
+        else:
+            signal_data = parse_trade_signal(combined_text)
         if not signal_data:
             return
 
@@ -613,7 +638,11 @@ async def message_handler(event):
                 logger.warning(f"[{username}] Update failed or no results returned.")
 
 
-    
+@telegram_client.on(events.MessageEdited)
+async def edited_handler(event):
+    logger.info('An EDITED message recieved')
+    await message_handler(event)
+
 # # === Main Entry Point ===
 # async def main():
 #     from interface import dp, bot
@@ -657,3 +686,4 @@ async def main():
     
 if __name__ == '__main__':
     asyncio.run(main())
+    

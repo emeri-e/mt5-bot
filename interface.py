@@ -64,11 +64,19 @@ def close_all_positions():
     for item in all_items:
         order_id = item.ticket
         symbol = item.symbol
-        volume = item.volume_current
+        # volume = item.volume_current
         order_type = item.type
         state = item.state if hasattr(item, "state") else mt5.ORDER_STATE_FILLED  # assume filled for positions
         magic = item.magic if hasattr(item, "magic") else 0
 
+        if isinstance(item, mt5.TradePosition):
+            volume = item.volume
+        elif isinstance(item, mt5.TradeOrder):
+            volume = item.volume_current
+        else:
+            # Unknown type
+            volume = 'unknown'
+            continue
         if symbol not in price_info_cache:
             price_info_cache[symbol] = mt5.symbol_info_tick(symbol)
 
@@ -168,9 +176,9 @@ async def positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
             shutdown_mt5()
             if positions:
                 details = "\n".join([
-                    f"{p.symbol} | Vol: {p.volume_current} | Entry: {getattr(p, 'price_open', '-'):.5f} | "
+                    f"{p.symbol} | Vol: {p.volume if isinstance(p, mt5.TradePosition) else p.volume_current } | Entry: {getattr(p, 'price_open', '-'):.5f} | "
                     f"SL: {getattr(p, 'sl', '-'):.5f} | TP: {getattr(p, 'tp', '-'):.5f} | "
-                    f"State: {ORDER_STATES.get(p.state, 'unknown')}"
+                    f"State: {ORDER_STATES.get(p.state if hasattr(p, "state") else mt5.ORDER_STATE_FILLED, 'unknown')}"
                     for p in positions
                 ])
                 output.append(f"<b>{username}</b>:\n{details}")

@@ -9,6 +9,7 @@ class BaseConfig:
     BOT_TOKEN = config('BOT_TOKEN')
 
     GEMINI_API_KEY=config('GEMINI_API_KEY')
+    OPENAI_API_KEY=config('OPENAI_API_KEY')
     SELECTED_CHANNEL = config('DEFAULT_CHANNEL')
 
     TRADE_LOG_PATH="trades.json"
