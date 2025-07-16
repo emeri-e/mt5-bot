@@ -465,7 +465,9 @@ async def message_handler(event):
     telegram_message = event.message.text
     message_id = str(event.message.id)
 
-    
+    if not message_buffer.get(chat_id):
+        message_buffer[chat_id] = deque([])
+        
     message_buffer[chat_id].append({
         "id": message_id,
         "text": telegram_message,
