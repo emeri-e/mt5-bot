@@ -1,7 +1,7 @@
 .venv
 .env
-user.session
-user.session-journal
+*.session
+*.session-journal
 trades.json
 listener.log
 regex_pattern_test.py

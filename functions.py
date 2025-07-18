@@ -4,6 +4,13 @@ from datetime import datetime
 import re
 from config import base
 
+import hashlib
+import json
+
+def hash_signal(signal: dict) -> str:
+    fingerprint = json.dumps(signal, sort_keys=True)
+    return hashlib.sha256(fingerprint.encode()).hexdigest()
+
 # TRADE_LOG_PATH = base.TRADE_LOG_PATH
 
 

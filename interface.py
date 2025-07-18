@@ -11,7 +11,7 @@ import MetaTrader5 as mt5
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes
-
+from telegram.ext import MessageHandler, filters
 
 from functions import load_accounts
 from mt5.utils import initialize_mt5, shutdown_mt5
@@ -167,6 +167,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode=ParseMode.HTML
     )
 
+
+async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.effective_message
+
+    if message.forward_from_chat:
+        chat_id = message.forward_from_chat.id
+        chat_title = message.forward_from_chat.title or "No Title"
+        await message.reply_text(
+            f"📨 Forwarded from: <b>{chat_title}</b>\n🆔 Chat ID: <code>{chat_id}</code>",
+            parse_mode='HTML'
+        )
+    else:
+        await message.reply_text("This message was not forwarded from a channel or group.")
+
 async def positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     output = []
     for acc in ACCOUNTS:
@@ -202,10 +216,37 @@ async def closeall(update: Update, context: ContextTypes.DEFAULT_TYPE):
             results.append(f"<b>{username}</b>: mt5 login failed")
     await update.message.reply_text("\n".join(results), parse_mode=ParseMode.HTML)
 
+
+async def forwarded_from_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.effective_message
+
+    # Check if the message is forwarded and from a chat
+    if message and message.forward_origin:
+        origin = message.forward_origin
+        if hasattr(origin, "chat"):
+            chat_id = origin.chat.id
+            chat_title = origin.chat.title or "Unnamed"
+            await message.reply_text(
+                f"📨 Forwarded from: <b>{chat_title}</b>\n🆔 Chat ID: <code>{chat_id}</code>",
+                parse_mode="HTML"
+            )
+        else:
+            await message.reply_text("✅ This is a forwarded message, but I couldn't get the chat info.")
+    else:
+        await message.reply_text("This message was not forwarded from a public chat.")
+
 # === App Setup ===
 def create_bot_app():
     application = Application.builder().token(base.BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("positions", positions))
     application.add_handler(CommandHandler("closeall", closeall))
+
+    # Add forwarded message handler (DM only)
+    # application.add_handler(
+    #     MessageHandler(filters.FORWARDED & filters.ChatType.PRIVATE, handle_forwarded_message)
+    # )
+    application.add_handler(
+        MessageHandler(filters.FORWARDED & filters.ChatType.PRIVATE, forwarded_from_handler)
+    )
     return application

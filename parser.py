@@ -46,6 +46,9 @@ Rules:
 - Correct improperly formatted prices (e.g., "105.345" for BTC might mean "105345").
 - Deduce direction based on relative TP and SL: TP above entry = BUY, TP below = SELL.
 - Always return JSON only.
+- if there are many new signals, the do for only the last one.
+- ignore all update signals on layering( i dont use layering)
+- a message can be only update message say ' cancel this trade' or just 'cancel' in such case, just return it as a close_trade
 
 Telegram message:
 {text}
